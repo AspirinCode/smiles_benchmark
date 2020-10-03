@@ -1,0 +1,3 @@
+[submodule "smilesreading"]
+	path = smilesreading
+	url = https://github.com/nextmovesoftware/smilesreading.git
