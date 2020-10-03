@@ -7,55 +7,86 @@ use chemcore::daylight;
 use chemcore::molecule::{ Molecule, Error };
 use gamma::graph::Graph;
 
-fn main() -> std::io::Result<()> {
-    let _ = fs::create_dir("./results");
+fn main() -> io::Result<()> {
+    let write_root = "./results/";
+    let _ = fs::create_dir(write_root);
     let read_root = "./smilesreading/2-aromaticsmiles/chembl";
 
-    for entry in fs::read_dir(read_root)? {
-        let entry = entry?;
-        let file_name = entry.file_name().to_string_lossy()
-            .to_string().replace(".smi.gz", ".txt");
-        let in_file = fs::File::open(entry.path())?;
-        let in_stream = GzDecoder::new(in_file);
-        let reader = io::BufReader::new(in_stream);
-        let out_path = String::from(format!("./results/{}", file_name));
+    for result in fs::read_dir(read_root)? {
+        let entry = result?;
+        let writer = create_writer(&entry, write_root)?;
+        let reader = create_reader(&entry)?;
 
-        let out_file = fs::File::create(out_path)?;
-        let mut writer = io::LineWriter::new(out_file);
+        process_file(reader, writer)?;
+    }
 
-        for result in reader.lines() {
-            let line = result?;
-            let parts = line.split_whitespace().collect::<Vec<_>>();
-            let id = parts.last().expect("no parts");
+    Ok(())
+}
 
-            if parts.len() == 1 {
-                writeln!(&mut writer, "# {} No_input", id);
-                
-                continue;
-            }
+fn process_file(
+    reader: io::BufReader<GzDecoder<std::fs::File>>,
+    mut writer: io::LineWriter<std::fs::File>
+) -> io::Result<()> {
+    for result in reader.lines() {
+        let line = result?;
+        let parts = line.split_whitespace().collect::<Vec<_>>();
+        let id = parts.last().expect("no parts");
 
-            let smiles = parts.first().expect("no smiles");
+        if parts.len() == 1 {
+            writeln!(&mut writer, "# {} No_input", id)?;
+            
+            continue;
+        }
 
-            match daylight::read(&smiles) {
-                Ok(molecule) => {
-                    let hcounts = molecule.nodes().iter().map(|id| {
-                        molecule.hydrogens(*id).unwrap().to_string()
-                    }).collect::<Vec<_>>();
+        write_line(id, parts.first().expect("no smiles"), &mut writer)?;
+    }
 
-                    writeln!(&mut writer, "{} {}", id, hcounts.join(" "));
-                },
-                Err(Error::CanNotKekulize) => {
-                    writeln!(&mut writer, "# {} Kekulization_failure", id);
-                },
-                Err(Error::Hypervalent(_)) => {
-                    writeln!(&mut writer, "# {} Bad_valence", id);
-                },
-                Err(error) => {
-                    writeln!(&mut writer, "# {} ERROR: {:?}", id, error);
-                }
-            }
+    Ok(())
+}
+
+fn write_line(
+    id: &str,
+    smiles: &str,
+    writer: &mut io::LineWriter<std::fs::File>
+) ->io::Result<()> {
+    match daylight::read(smiles) {
+        Ok(molecule) => {
+            let hcounts = molecule.nodes().iter().map(|id| {
+                molecule.hydrogens(*id).unwrap().to_string()
+            }).collect::<Vec<_>>();
+
+            writeln!(writer, "{} {}", id, hcounts.join(" "))?;
+        },
+        Err(Error::CanNotKekulize) => {
+            writeln!(writer, "# {} Kekulization_failure", id)?;
+        },
+        Err(Error::Hypervalent(_)) => {
+            writeln!(writer, "# {} Bad_valence", id)?;
+        },
+        Err(error) => {
+            writeln!(writer, "# {} ERROR: {:?}", id, error)?;
         }
     }
 
     Ok(())
+}
+
+fn create_reader(
+    entry: &fs::DirEntry
+) -> io::Result<io::BufReader<GzDecoder<std::fs::File>>> {
+    let file = fs::File::open(entry.path())?;
+    let decoder = GzDecoder::new(file);
+    
+    Ok(io::BufReader::new(decoder))
+}
+
+fn create_writer(
+    entry: &fs::DirEntry, write_root: &str
+) -> io::Result<io::LineWriter<std::fs::File>> {
+    let file_name = entry.file_name()
+        .to_string_lossy().replace(".smi.gz", ".txt");
+    let path = String::from(format!("{}{}", write_root, file_name));
+    let file = fs::File::create(path)?;
+
+    Ok(io::LineWriter::new(file))
 }

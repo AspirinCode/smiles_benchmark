@@ -1,5 +1,5 @@
 [package]
-name = "smiles_suite"
+name = "smiles_benchmark"
 version = "0.1.0"
 authors = ["Richard Apodaca <rich.apodaca@gmail.com>"]
 edition = "2018"
